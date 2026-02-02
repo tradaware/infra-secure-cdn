@@ -45,7 +45,7 @@ def print_f(message, color=None, show_time=True):
         if color in ['green', 'cyan']: prefix += f"{Colors.GREEN}INF{Colors.RESET} "
         elif color == 'yellow': prefix += f"{Colors.YELLOW}WRN{Colors.RESET} "
         elif color == 'red': prefix += f"{Colors.RED}ERR{Colors.RESET} "
-    
+
     color_code = color_map.get(color, '')
     print(f"{prefix}{color_code}{message}{Colors.RESET}")
 
@@ -69,19 +69,7 @@ def is_behind_origin():
         return int(result) > 0, int(result)
     return False, 0
 
-def get_version_from_dockerfile():
-    """Extract NGINX_VERSION from Dockerfile"""
-    try:
-        with open('Dockerfile', 'r') as f:
-            content = f.read()
-            # Try to find common version patterns
-            patterns = [r'NGINX_VERSION=([\d\.]+)', r'VERSION=([\d\.]+)']
-            for p in patterns:
-                match = re.search(p, content)
-                if match: return match.group(1)
-    except FileNotFoundError:
-        pass
-    return "1.0.0"
+
 
 def parse_tag(tag):
     """Parse tag following X.Y.Z-N pattern"""
@@ -96,16 +84,16 @@ def get_latest_tag():
     """Get the latest tag matching the revision pattern"""
     tags_raw = run_cmd('git tag --list', capture_output=True)
     if not tags_raw: return None
-    
+
     parsed_tags = []
     for tag in tags_raw.split('\n'):
         tag = tag.strip()
         parsed = parse_tag(tag)
         if parsed:
             parsed_tags.append((parsed, tag))
-    
+
     if not parsed_tags: return None
-    
+
     # Sort by version tuple then revision int
     parsed_tags.sort(key=lambda x: x[0], reverse=True)
     return parsed_tags[0][1]
@@ -113,7 +101,7 @@ def get_latest_tag():
 def main():
     if HAS_RICH:
         console = Console()
-    
+
     print_f("Starting release process for Secure CDN...", 'cyan')
 
     # Check branch
@@ -146,22 +134,16 @@ def main():
         print_f("Continuing with --force...", 'yellow')
 
     # Versioning
-    docker_version = get_version_from_dockerfile()
     latest_tag = get_latest_tag()
-    
+
     if latest_tag:
         print_f(f"Latest tag found: {latest_tag}", 'cyan')
         lt_version_parts, lt_revision = parse_tag(latest_tag)
         lt_version_str = ".".join(map(str, lt_version_parts))
-        
-        if lt_version_str == docker_version:
-            new_tag = f"{lt_version_str}-{lt_revision + 1}"
-        else:
-            new_tag = f"{docker_version}-1"
-            print_f(f"Dockerfile version ({docker_version}) differs from latest tag version ({lt_version_str}).", 'yellow')
+        new_tag = f"{lt_version_str}-{lt_revision + 1}"
     else:
-        new_tag = f"{docker_version}-1"
-        print_f(f"No valid revision tags (X.Y.Z-N) found. Using Dockerfile version: {docker_version}", 'yellow')
+        new_tag = "1.0.0-1"
+        print_f("No valid revision tags (X.Y.Z-N) found. Starting at 1.0.0-1", 'yellow')
 
     if HAS_RICH:
         console.print(Panel.fit(f"[bold cyan]Proposed new tag: {new_tag}[/bold cyan]", title="Next Release", border_style="cyan"))
