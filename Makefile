@@ -5,4 +5,4 @@ run:
 	docker run --rm -it ghcr.io/tradaware/secure-cdn:local
 
 release:
-	bin/release.sh
+	python3 bin/release.py
