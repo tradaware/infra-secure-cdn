@@ -74,27 +74,41 @@ def get_version_from_dockerfile():
     try:
         with open('Dockerfile', 'r') as f:
             content = f.read()
-            match = re.search(r'NGINX_VERSION=([\d\.]+)', content)
-            if match:
-                return match.group(1)
+            # Try to find common version patterns
+            patterns = [r'NGINX_VERSION=([\d\.]+)', r'VERSION=([\d\.]+)']
+            for p in patterns:
+                match = re.search(p, content)
+                if match: return match.group(1)
     except FileNotFoundError:
         pass
-    return "0.0.0"
+    return "1.0.0"
 
-def get_latest_tag(base_version):
-    """Get the latest tag matching the base version"""
-    tags = run_cmd('git tag --list', capture_output=True)
-    if not tags: return None
+def parse_tag(tag):
+    """Parse tag following X.Y.Z-N pattern"""
+    match = re.match(r'^(\d+\.\d+\.\d+)-(\d+)$', tag)
+    if match:
+        version_parts = tuple(map(int, match.group(1).split('.')))
+        revision = int(match.group(2))
+        return version_parts, revision
+    return None
+
+def get_latest_tag():
+    """Get the latest tag matching the revision pattern"""
+    tags_raw = run_cmd('git tag --list', capture_output=True)
+    if not tags_raw: return None
     
-    pattern = re.compile(rf'^{re.escape(base_version)}-(\d+)$')
-    matches = []
-    for tag in tags.split('\n'):
-        m = pattern.match(tag.strip())
-        if m:
-            matches.append(int(m.group(1)))
+    parsed_tags = []
+    for tag in tags_raw.split('\n'):
+        tag = tag.strip()
+        parsed = parse_tag(tag)
+        if parsed:
+            parsed_tags.append((parsed, tag))
     
-    if not matches: return None
-    return f"{base_version}-{max(matches)}"
+    if not parsed_tags: return None
+    
+    # Sort by version tuple then revision int
+    parsed_tags.sort(key=lambda x: x[0], reverse=True)
+    return parsed_tags[0][1]
 
 def main():
     if HAS_RICH:
@@ -132,21 +146,27 @@ def main():
         print_f("Continuing with --force...", 'yellow')
 
     # Versioning
-    base_version = get_version_from_dockerfile()
-    latest_tag = get_latest_tag(base_version)
+    docker_version = get_version_from_dockerfile()
+    latest_tag = get_latest_tag()
     
     if latest_tag:
-        last_num = int(latest_tag.split('-')[-1])
-        new_tag = f"{base_version}-{last_num + 1}"
-        print_f(f"Latest tag: {latest_tag}", 'cyan')
+        print_f(f"Latest tag found: {latest_tag}", 'cyan')
+        lt_version_parts, lt_revision = parse_tag(latest_tag)
+        lt_version_str = ".".join(map(str, lt_version_parts))
+        
+        if lt_version_str == docker_version:
+            new_tag = f"{lt_version_str}-{lt_revision + 1}"
+        else:
+            new_tag = f"{docker_version}-1"
+            print_f(f"Dockerfile version ({docker_version}) differs from latest tag version ({lt_version_str}).", 'yellow')
     else:
-        new_tag = f"{base_version}-1"
-        print_f(f"No previous tags found for version {base_version}.", 'yellow')
+        new_tag = f"{docker_version}-1"
+        print_f(f"No valid revision tags (X.Y.Z-N) found. Using Dockerfile version: {docker_version}", 'yellow')
 
     if HAS_RICH:
-        console.print(Panel.fit(f"[bold cyan]New tag: {new_tag}[/bold cyan]", title="Proposed Tag", border_style="cyan"))
-        if not Confirm.ask("Confirm new tag?", default=True):
-            new_tag = Prompt.ask("Enter manual tag")
+        console.print(Panel.fit(f"[bold cyan]Proposed new tag: {new_tag}[/bold cyan]", title="Next Release", border_style="cyan"))
+        if not Confirm.ask("Is this correct?", default=True):
+            new_tag = Prompt.ask("Enter manual tag (X.Y.Z-N)")
     else:
         print_f(f"Proposed tag: {new_tag}", 'cyan')
         if input("Is this correct? (Y/n): ").lower() == 'n':
