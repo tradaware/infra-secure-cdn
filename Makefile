@@ -1,8 +1,12 @@
+# Define container backend if not set (prefers podman over docker)
+# Override by exporting CONTAINER_BACKEND_COMMAND in your ~/.profile
+CONTAINER_BACKEND_COMMAND ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo)
+
 image:
-	docker build . -t ghcr.io/tradaware/secure-cdn:local
+	$(CONTAINER_BACKEND_COMMAND) build . -t ghcr.io/tradaware/secure-cdn:local
 
 run:
-	docker run --rm -it ghcr.io/tradaware/secure-cdn:local
+	$(CONTAINER_BACKEND_COMMAND) run --rm -it ghcr.io/tradaware/secure-cdn:local
 
 release:
 	python3 bin/release.py
